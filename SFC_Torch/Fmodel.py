@@ -26,6 +26,12 @@ from .packingscore import packingscore_voxelgrid_torch
 from .utils import r_factor, assert_numpy
 
 
+def generate_CV_flags(array_length, percent=0.10):
+    np.random.seed(42)
+    flags = np.random.binomial(1, percent, array_length).astype(bool)
+    return flags
+
+
 class SFcalculator(object):
     """
     A class to formalize the structural factor calculation.
@@ -142,6 +148,7 @@ class SFcalculator(object):
             self.Hasu_array = generate_reciprocal_asu(
                 self.unit_cell, self.space_group, self.dmin, anomalous=anomalous
             )
+
             assert (
                 diff_array(self.HKL_array, self.Hasu_array) == set()
             ), "HKL_array should be equal or subset of the Hasu_array!"
@@ -266,7 +273,13 @@ class SFcalculator(object):
             ).type(torch.float32)
         self.inspected = False
 
-    def set_experiment(self, exp_mtz, expcolumns=["FP", "SIGFP"], freeflag="FreeR_flag", testset_value=0):
+    def set_experiment(
+        self,
+        exp_mtz,
+        expcolumns=["FP", "SIGFP"],
+        freeflag="FreeR_flag",
+        testset_value=0,
+    ):
         """
         Set experimental data for refinement,
         including Fo, SigF, free_flag, Outlier
@@ -274,21 +287,24 @@ class SFcalculator(object):
         exp_mtz, rs.Dataset, mtzfile read by reciprocalspaceship
         """
         try:
-            self.Fo = torch.tensor(exp_mtz[expcolumns[0]].to_numpy(), device=try_gpu()).type(
-                torch.float32
-            )
+            self.Fo = torch.tensor(
+                exp_mtz[expcolumns[0]].to_numpy(), device=try_gpu()
+            ).type(torch.float32)
             self.SigF = torch.tensor(
                 exp_mtz[expcolumns[1]].to_numpy(), device=try_gpu()
             ).type(torch.float32)
         except:
-            print(f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!")
+            print(
+                f"MTZ file doesn't contain {expcolumns[0]} or {expcolumns[1]}! Check your data!"
+            )
 
         try:
             self.free_flag = np.where(
                 exp_mtz[freeflag].values == testset_value, True, False
             )
         except:
-            print("No Free Flag! Check your data!")
+            print("No Free Flag! Generating internal set")
+            self.free_flag = generate_CV_flags(len(exp_mtz))
 
         # label outliers
         exp_mtz.label_centrics(inplace=True)
@@ -660,14 +676,33 @@ class SFcalculator(object):
         self,
         requires_grad,
         kiso=1.0,
-        kmask=0.35,
-        uaniso=[0.01, 0.01, 0.01, 1e-4, 1e-4, 1e-4],
+        kmask=0.00,
+        uaniso=[1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4],
     ):
-        """Only used for case you don't have data"""
-        self.kmasks = [
-            torch.tensor(kmask).to(self.atom_pos_frac).requires_grad_(requires_grad)
-            for i in range(self.n_bins)
-        ]
+        """
+
+        Only used for case you don't have data.
+
+        kmask = ksol * exp( -Bsol * s**2 /4)
+
+        with ksol = 0.85 (midway between 0.75-0.95)
+        and  Bsol = 250  (midway between 150-350)
+        from Glykos & Kokkinidis, Acta Crystallogr D Biol Crystallogr. 2000 Aug;56(Pt 8):1070-2
+        NOTING: as authors mention, these might not be the most representative values.
+
+        """
+
+        self.kmasks = []
+
+        for bin_i in np.sort(np.unique(self.bins)):
+            index_i = self.bins == bin_i
+            s_squared = 1 / np.mean(self.dHasu[index_i])
+            kmask = 0.85 * np.exp(-250 * s_squared / 4)
+            kmask_tensor = (
+                torch.tensor(kmask).to(self.atom_pos_frac).requires_grad_(requires_grad)
+            )
+            self.kmasks.append(kmask_tensor)
+
         self.kisos = [
             torch.tensor(kiso).to(self.atom_pos_frac).requires_grad_(requires_grad)
             for i in range(self.n_bins)
@@ -802,12 +837,7 @@ class SFcalculator(object):
         self._get_scales_lbfgs_r(r_steps, r_lr, verbose, initialize=False)
 
     def get_scales_adam(
-        self, 
-        lr=0.1, 
-        n_steps=100, 
-        sub_ratio=0.3, 
-        initialize=True, 
-        verbose=False
+        self, lr=0.1, n_steps=100, sub_ratio=0.3, initialize=True, verbose=False
     ):
         def adam_opt_i(
             bin_i, index_i, sub_ratio=0.3, lr=0.001, n_steps=100, verbose=False
@@ -905,6 +935,7 @@ class SFcalculator(object):
         -------
         torch.tensor, complex
         """
+
         if bins is None:
             bins = range(self.n_bins)
 

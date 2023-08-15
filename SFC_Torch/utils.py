@@ -15,6 +15,7 @@ __all__ = [
     "aniso_scaling",
 ]
 
+
 def r_factor(Fo, Fmodel, free_flag):
     """
     A function to calculate R_work and R_free
@@ -166,9 +167,12 @@ def aniso_scaling(uaniso, reciprocal_cell_paras, HKL_array):
         U11 * h**2 * ar**2
         + U22 * k**2 * br**2
         + U33 * l**2 * cr**2
-        + 2 * (h * k * U12 * ar * br * cos_gammar 
-               + h * l * U13 * ar * cr * cos_betar 
-               + k * l * U23 * br * cr * cos_alphar)
+        + 2
+        * (
+            h * k * U12 * ar * br * cos_gammar
+            + h * l * U13 * ar * cr * cos_betar
+            + k * l * U23 * br * cr * cos_alphar
+        )
     )
     return torch.exp(-2.0 * np.pi**2 * args)
 
