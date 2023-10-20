@@ -20,7 +20,7 @@ setup(name="SFcalculator_torch",
     python_requires=">=3.7",
     install_requires=[
         "torch>=1.13.0",
-        "gemmi>=0.5.6",
+        "gemmi>=0.5.5,<=0.5.7",
         "reciprocalspaceship>=0.9.18",
     ],
     setup_requires=["pytest-runner"],
