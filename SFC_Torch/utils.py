@@ -15,6 +15,36 @@ __all__ = [
     "aniso_scaling",
 ]
 
+<<<<<<< HEAD
+=======
+def try_gpu(i=0):
+    if torch.cuda.device_count() >= i + 1:
+        return torch.device(f"cuda:{i}")
+    return torch.device("cpu")
+
+
+def try_all_gpus():
+    devices = [torch.device(f"cuda:{i}") for i in range(torch.cuda.device_count())]
+    return devices if devices else [torch.device("cpu")]
+
+
+def is_list_or_tuple(x):
+    return isinstance(x, list) or isinstance(x, tuple)
+
+
+def assert_numpy(x, arr_type=None):
+    if isinstance(x, torch.Tensor):
+        if x.is_cuda:
+            x = x.cpu()
+        x = x.detach().numpy()
+    if is_list_or_tuple(x):
+        x = np.array(x)
+    assert isinstance(x, np.ndarray)
+    if arr_type is not None:
+        x = x.astype(arr_type)
+    return x
+
+>>>>>>> upstream/master
 
 def r_factor(Fo, Fmodel, free_flag):
     """
@@ -108,7 +138,7 @@ def DWF_iso(b_iso, dr2_array):
     -------
     A 2D [N_atoms, N_HKLs] float32 tensor with DWF corresponding to different atoms and different HKLs
     """
-    dr2_tensor = torch.tensor(dr2_array, device=try_gpu())
+    dr2_tensor = torch.tensor(dr2_array).to(b_iso)
     return torch.exp(-b_iso.view([-1, 1]) * dr2_tensor / 4.0).type(torch.float32)
 
 
@@ -159,7 +189,7 @@ def aniso_scaling(uaniso, reciprocal_cell_paras, HKL_array):
     ------
     torch.tensor [N_HKLs,]
     """
-    HKL_tensor = torch.tensor(HKL_array, device=try_gpu())
+    HKL_tensor = torch.tensor(HKL_array, device=uaniso.device)
     U11, U22, U33, U12, U13, U23 = uaniso
     h, k, l = HKL_tensor.T
     ar, br, cr, cos_alphar, cos_betar, cos_gammar = reciprocal_cell_paras
@@ -177,7 +207,7 @@ def aniso_scaling(uaniso, reciprocal_cell_paras, HKL_array):
     return torch.exp(-2.0 * np.pi**2 * args)
 
 
-def vdw_rad_tensor(atom_name_list):
+def vdw_rad_tensor(atom_name_list, device=try_gpu()):
     """
     Return the vdw radius tensor of the atom list
     """
@@ -187,7 +217,7 @@ def vdw_rad_tensor(atom_name_list):
         element = gemmi.Element(atom_type)
         vdw_rad_dict[atom_type] = torch.tensor(element.vdw_r)
     vdw_rad_tensor = torch.tensor(
-        [vdw_rad_dict[atom] for atom in atom_name_list], device=try_gpu()
+        [vdw_rad_dict[atom] for atom in atom_name_list], device=device
     ).type(torch.float32)
     return vdw_rad_tensor
 
@@ -220,7 +250,7 @@ def nonH_index(atom_name_list):
     return index
 
 
-def unitcell_grid_center(unitcell, spacing=4.5, frac=False, return_tensor=True):
+def unitcell_grid_center(unitcell, spacing=4.5, frac=False, return_tensor=True, device=try_gpu()):
     """
     Create a grid in real space given a unitcell and spacing
     output the center positions of all grids
@@ -261,38 +291,9 @@ def unitcell_grid_center(unitcell, spacing=4.5, frac=False, return_tensor=True):
         )
 
     if return_tensor:
-        return torch.tensor(result, device=try_gpu()).type(torch.float32)
+        return torch.tensor(result, device=device).type(torch.float32)
     else:
         return result
-
-
-def try_gpu(i=0):
-    if torch.cuda.device_count() >= i + 1:
-        return torch.device(f"cuda:{i}")
-    return torch.device("cpu")
-
-
-def try_all_gpus():
-    devices = [torch.device(f"cuda:{i}") for i in range(torch.cuda.device_count())]
-    return devices if devices else [torch.device("cpu")]
-
-
-def is_list_or_tuple(x):
-    return isinstance(x, list) or isinstance(x, tuple)
-
-
-def assert_numpy(x, arr_type=None):
-    if isinstance(x, torch.Tensor):
-        if x.is_cuda:
-            x = x.cpu()
-        x = x.detach().numpy()
-    if is_list_or_tuple(x):
-        x = np.array(x)
-    assert isinstance(x, np.ndarray)
-    if arr_type is not None:
-        x = x.astype(arr_type)
-    return x
-
 
 def bin_by_logarithmic(data, bins=10, Nmin=100):
     """Bin data with the logarithmic algorithm
